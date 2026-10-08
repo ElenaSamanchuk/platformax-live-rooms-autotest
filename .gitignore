@@ -1,0 +1,6 @@
+node_modules
+.env
+*.state.json
+report
+test-results
+.DS_Store
