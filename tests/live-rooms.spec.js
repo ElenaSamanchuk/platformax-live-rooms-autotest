@@ -167,9 +167,10 @@ test('Доступы: сотрудник «только просмотр» по�
   const id = await newRoom('RBAC');
   const s = await h.as(browser, 'staffView');
   try {
-    for (const path of ['/admin/live-rooms/create', `/admin/live-rooms/${id}/edit`]) {
+    for (const path of ['/admin/live-rooms/create', `/admin/live-rooms/${id}/edit`, `/admin/live-rooms/${id}/room`]) {
       const r = await s.page.goto(h.BASE + path);
       expect(r.status(), path).toBe(403);
+      await expect.soft(s.page.getByText('Доступ запрещён'), `${path}: нет экрана «Доступ запрещён» (пустая страница — L-3)`).toBeVisible({ timeout: 5000 });
       await expect(s.page.getByText('THIS ACTION IS UNAUTHORIZED', { exact: false }), `${path}: сырая английская 403 (L-13)`).toHaveCount(0);
     }
   } finally { await s.ctx.close(); }
