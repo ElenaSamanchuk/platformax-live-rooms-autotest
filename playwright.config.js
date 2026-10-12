@@ -18,7 +18,7 @@ module.exports = defineConfig({
     baseURL: process.env.BASE_URL,
     headless: process.env.HEADED !== '1',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: 'off', // без автозаписи: на видео не должно быть людей
     trace: 'retain-on-failure',
     launchOptions: {
       args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'],

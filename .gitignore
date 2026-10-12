@@ -4,3 +4,4 @@ node_modules
 report
 test-results
 .DS_Store
+qa-out
