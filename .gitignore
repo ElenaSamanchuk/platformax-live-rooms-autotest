@@ -5,3 +5,8 @@ report
 test-results
 .DS_Store
 qa-out
+
+# Отдельные параллельные/датированные артефакты, могут содержать закрытые данные
+test-results-*/
+report-*/
+*.storage-state.json

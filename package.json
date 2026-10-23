@@ -4,11 +4,13 @@
   "description": "Автотесты задачи «Live-комнаты» PlatformaX (тестовый стенд)",
   "scripts": {
     "setup": "npm install && npx playwright install chromium",
-    "test": "playwright test",
-    "test:headed": "HEADED=1 playwright test",
-    "report": "playwright show-report report"
+    "test": "playwright test tests/current-smoke.spec.js tests/access-email.spec.js",
+    "test:headed": "HEADED=1 playwright test tests/current-smoke.spec.js tests/access-email.spec.js",
+    "report": "playwright show-report report",
+    "test:known": "playwright test tests/known-issues.spec.js",
+    "test:all": "playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "1.48.2"
+    "@playwright/test": "1.63.0"
   }
 }
