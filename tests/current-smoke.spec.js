@@ -7,25 +7,38 @@ if (!/\.test\./.test(new URL(h.BASE).hostname)) throw new Error('Разрешё�
 
 test.use({ trace: 'off', video: 'off' }); // Не сохранять signed invite и медиатокены.
 const out = process.env.QA_OUT || 'qa-out/current-smoke';
+const prefix = process.env.QA_PREFIX || 'QA-AT';
+if (!/^QA-[A-Za-z0-9-]+$/.test(prefix)) throw new Error('QA_PREFIX должен начинаться с QA-');
 const record = (value) => {
   fs.mkdirSync(out, { recursive: true });
   fs.appendFileSync(path.join(out, 'facts.jsonl'), JSON.stringify({ at: new Date().toISOString(), ...value }) + '\n');
 };
 async function owner(browser) {
   const o = await h.as(browser, 'owner');
-  await o.page.goto(h.BASE + '/admin/live-rooms');
+  await o.page.goto(h.BASE + '/profile', { waitUntil: 'domcontentloaded' });
+  await o.page.waitForFunction(() => {
+    try { return !!JSON.parse(document.querySelector('#app').dataset.page).props.user?.id; } catch { return false; }
+  }, null, { timeout: 20000 });
   const props = await o.page.evaluate(() => JSON.parse(document.querySelector('#app').dataset.page).props);
-  expect(props.auth?.user?.email, 'подтверждена учётная запись владельца').toBe(process.env.OWNER_EMAIL);
+  expect(props.user?.email, 'подтверждена учётная запись владельца').toBe(process.env.OWNER_EMAIL);
+  expect(props.isProduction, 'подтверждён тестовый режим').toBe(false);
+  expect(props.impersonation, 'нет входа от имени другого пользователя').toBeFalsy();
+  if (process.env.OWNER_ID) expect(props.user.id, 'подтверждён ID владельца').toBe(Number(process.env.OWNER_ID));
   expect(new URL(h.BASE).hostname, 'разрешён только тестовый стенд').toMatch(/\.test\./);
+  await o.page.goto(h.BASE + '/admin/live-rooms', { waitUntil: 'domcontentloaded' });
+  const ownerRole = await o.page.evaluate(() => JSON.parse(document.querySelector('#app').dataset.page).props.schoolRbac?.role);
+  expect(ownerRole, 'подтверждена роль владельца').toBe('owner');
   const build = await o.page.locator('script[src]').evaluateAll(es => es.map(e => e.src.match(/admin-[^/]+\.js/)?.[0]).filter(Boolean));
   record({ event: 'build', assets: build });
   return o;
 }
 async function room(o, suffix, extra = {}) {
-  const id = await h.createRoom(o.page, 'QA-AT Codex-1023 ' + suffix + ' ' + h.stamp(), {
+  const id = await h.createRoom(o.page, prefix + ' ' + suffix + ' ' + h.stamp(), {
     meeting_method: 'platform', guest_mode: 'anonymous', visibility: 'unlisted',
     join_mode: 'open', entry_mode: 'free', hand_raise_enabled: '1', ...extra,
   });
+  record({ event: 'created-id', id, kind: suffix });
+  try {
   expect((await h.publish(o.page, id)).status).toBe(200);
   expect((await h.start(o.page, id)).status).toBe(200);
   await o.page.goto(`${h.BASE}/admin/live-rooms/${id}/edit`);
@@ -33,6 +46,12 @@ async function room(o, suffix, extra = {}) {
   expect(invite, 'сохранено подписанное приглашение своей комнаты').toBeTruthy();
   record({ event: 'created', id, kind: suffix });
   return { id, invite };
+  } catch (error) {
+    const finished = await h.finish(o.page, id);
+    const current = await h.state(o.page, id);
+    record({ event: 'setup-cleanup', id, response: finished.status, status: current.status, participants: (current.participants || []).length });
+    throw error;
+  }
 }
 async function join(page) {
   await page.getByRole('button', { name: 'Войти в комнату', exact: true }).click();
@@ -74,7 +93,7 @@ test('H-2: чистый гость получает только внешний 
     r = await room(o, 'external', { meeting_method: 'external', external_url: external });
     // Два независимых гостя: доступ не наследуется от владельца или первого гостя.
     for (let n = 1; n <= 2; n++) {
-      const g = await guest(browser, r.invite, 'QA-AT внешний гость ' + n); guests.push(g);
+      const g = await guest(browser, r.invite, prefix + ' внешний гость ' + n); guests.push(g);
       const button = g.page.getByRole('button', { name: 'Открыть внешнюю встречу', exact: true });
       await expect(button).toBeVisible();
       const result = await h.api(g.page, 'POST', `/live-rooms/${r.id}/guest/join`, {});
@@ -104,12 +123,12 @@ test('Гость: удалить и закрыть вход, затем верн
   try {
     r = await room(o, 'remove-restore');
     await o.page.goto(`${h.BASE}/admin/live-rooms/${r.id}/room`, { waitUntil: 'domcontentloaded' }); await join(o.page);
-    const name = 'QA-AT гость возврат';
+    const name = prefix + ' гость возврат';
     const g = await guest(browser, r.invite, name); guests.push(g); await join(g.page);
     await expect.poll(async () => (await h.state(o.page, r.id)).participants?.filter(p => p.guest_id).length).toBe(1);
     await h.wake(o.page); await o.page.getByRole('button', { name: 'Участники', exact: true }).click();
     await o.page.getByRole('button', { name: 'Действия: ' + name, exact: true }).last().click();
-    await o.page.getByText('Удалить гостя и закрыть ему вход', { exact: true }).click();
+    await o.page.getByText('Отключить и закрыть вход', { exact: true }).click();
     await o.page.getByRole('button', { name: /Удалить гостя|Закрыть вход|Отключить/ }).last().click();
     await expect(g.page.getByText(/Вас отключили/).first()).toBeVisible();
     // Измеряем естественное обновление лобби до любых новых join/API-запросов гостя.
@@ -146,7 +165,7 @@ test('Основной сценарий: три участника, двусто
   o.page.on('dialog', async d => { dialogs.push(d.type()); await d.dismiss(); });
   try {
     r = await room(o, 'main-smoke'); await o.page.goto(`${h.BASE}/admin/live-rooms/${r.id}/room`, { waitUntil: 'domcontentloaded' }); await join(o.page);
-    for (let n = 1; n <= 2; n++) { const g = await guest(browser, r.invite, 'QA-AT смоук ' + n); guests.push(g); await join(g.page); }
+    for (let n = 1; n <= 2; n++) { const g = await guest(browser, r.invite, prefix + ' смоук ' + n); guests.push(g); await join(g.page); }
     await expect(o.page.getByText('3 участника', { exact: true })).toBeVisible();
     const g = guests[0].page;
     await h.wake(g); await g.getByRole('button', { name: 'Чат', exact: true }).click();
