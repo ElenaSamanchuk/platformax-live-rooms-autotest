@@ -27,7 +27,7 @@ KOCHFIT_QA_SERVICE_TITLE=
 
 BASE_URL must be an HTTPS origin without path/query/credentials and match the explicit allowlist plus the pinned approved origin fingerprint for the selected brand. The fingerprints enforce the exact preapproved brand/origin pairs without publishing test URLs in this repository. This approval alone is insufficient: **every test** checks the actual host, actual configured user, `isProduction === false`, and no impersonation. Admin cases additionally require an explicit admin permission and an Admin page. Student cases reject admin/owner and require explicit student role evidence (`schoolRbac.role` or server `is_student`). Missing role projection is a ROLE BLOCKED failure, never inferred from a familiar name.
 
-QA_SERVICE fields are optional only for the legacy case: point to an existing own QA-AT/QA-Codex/QA-CL service with the exact expected title. Do not pass a real customer's service. No fixtures are created, so no server cleanup is necessary; each isolated context closes in `finally` even after a failed assertion. Legacy Cancel does not change a field or save anything.
+QA_SERVICE fields are required for the optional current-editor case. It pins the exact approved fixtures: Medvediva admin58054/service16/title `QA-Codex-MDV-1026 Доступный редактор`; Kochfit admin25893/service1/title `QA-Codex-PM-1023 Kochfit ретест`. No other service/account is accepted. No fixture is created or field changed; each context closes in `finally`.
 
 ## Commands
 
@@ -47,8 +47,22 @@ For each brand:
 
 1. Admin `/admin/services` and `/admin/service-sessions` must return200 and their actual modules under the approved role. A known missing404/403 remains a red **DEPLOYMENT BLOCK**, never green business behavior.
 2. Independent student `/service-sessions` must return200 and StudentSessions with a confirmed student role. Owner-readable props are not student coverage.
-3. The configured own legacy service edit opens with the exact title, Cancel returns to the list, and reopening preserves text/number values. This independent check can work while the personal module is missing; it does **not** mark that module as restored.
+3. `current own editor read-navigation preserves values`: exact Medvediva component `Admin/Services/ServiceEditPage` uses the visible same-origin `Услуги` link (no Cancel); exact Kochfit component `Admin/Services/ServicesView` uses its existing `Отмена` button. Both require exact fixture title in `#name`, navigate to `/admin/services`, reopen and compare input/textarea values. Fields are never modified. This checks only the current editor/navigation contract, not save/business behavior. A component mismatch is reported as an editor-contract failure, never automatically filed as a product bug.
 
-No runtime PASS is claimed merely by discovering six tests or by skipping missing authentication. Current authoring validation has no valid brand robot states: functional run is **NOTRUN_AUTH**, discovery/syntax only. Real-device cookies are not exported to manufacture a robot session.
+No runtime PASS is claimed merely by discovering tests or skipping missing authentication. On26Oct two independent admin states were captured after human login in separate robot windows (no existing Chrome/device-cookie export). The guarded run produced **3 admin PASS,1 admin FAIL,2 student SKIP/NOTRUN_AUTH**; student states remain absent and were not replaced with admin states.
 
 This suite does not cover paid checkout, booking/reserve/debit/return, product7/10 meeting audience, real join/media, recordings, mobile/native or the full brand business cycle. Those need their own controlled fixtures and scenarios. Medvediva flow/expiry rules are not applied to Kochfit.
+
+## 26.10 current-editor validation
+
+The published file discovers **6 cases**,3 for each brand. The ordinary Medvediva breadcrumb click remains a regression expectation. An unpublished diagnostic browser-Back draft is kept only in local work; it does not replace or soften that click.
+
+Fresh read-only captures confirmed Medvediva admin58054/service16 as exactly `Admin/Services/ServiceEditPage`, unique `#name`, visible `Услуги` link and no Cancel. Kochfit admin25893/service1 is exactly `Admin/Services/ServicesView`, unique `#name` and visible `Отмена`. Actual brand/user/isProduction=false/noimp/admin guards passed for both. No data field was edited.
+
+Actual runs remain separate:
+
+- **Original6-case run:3 admin PASS,1 admin FAIL,2 student SKIP/NOTRUN_AUTH.** Both mandatory admin-route cases and Kochfit editor Cancel/reopen value comparison passed. Medvediva's ordinary visible breadcrumb click was blocked by an overlapping desktop header div (`hidden h-9 w-2/3 items-center gap-1 md:flex`), not by a stale component expectation or authentication failure.
+- **Independent fresh breadcrumb repeat: FAIL again (2/2).** Exact role/test/noimp and editor/title guards passed; all5 hit-test points inside the link resolved to that header div,0/5 to the link. The ordinary click timed out. Screenshots and sanitized facts are local evidence, not repository files. The original regression expectation stays red: no forced click, skip, inverted assertion or `test.fail` annotation.
+- **Unpublished diagnostic browser-Back-only attempt:0 PASS,1 FAIL before the contract ran.** Fresh `/profile` navigation timed out after30seconds before editor/history assertions. Therefore Back functionality is **NOTRUN_PREFLIGHT**, not PASS and not evidence of another product defect. It is not combined with the original6-case run to claim4 passes. No further product runs were made. That unexecuted Back case was removed from this published test file and kept only as a local diagnostic draft.
+
+Both independent admin authentication captures remain distinct from business-test results. Student states are absent and never replaced with admin states. All contexts close in `finally`, including navigation failure; no logout, fixtures or server changes are required. Trace/video/screenshots remain off in the suite. Local auth states, raw logs, screenshots and evidence stay outside Git. Syntax/discovery validation and functional outcomes must be reported separately.

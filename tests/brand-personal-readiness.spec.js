@@ -1,4 +1,4 @@
-// Read-only readiness and legacy-cancel checks. No shared session/impersonation helpers.
+// Read-only readiness and current own-editor navigation checks. No shared session/impersonation helpers.
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
 const { createHash } = require('node:crypto');
@@ -10,6 +10,15 @@ const approvedOriginFingerprints = {
 
 test.use({ trace: 'off', video: 'off', screenshot: 'off', locale: 'ru-RU', timezoneId: 'Europe/Minsk', actionTimeout: 15000, navigationTimeout: 30000 });
 const brands = ['MEDVEDIVA', 'KOCHFIT'];
+// Exact current per-brand contracts; do not accept unrelated pages by suffix.
+const ownEditorContracts = {
+  MEDVEDIVA: { component: 'Admin/Services/ServiceEditPage', userId: 58054, serviceId: 16, title: 'QA-Codex-MDV-1026 Доступный редактор', navigation: 'services-link' },
+  KOCHFIT: { component: 'Admin/Services/ServicesView', userId: 25893, serviceId: 1, title: 'QA-Codex-PM-1023 Kochfit ретест', navigation: 'cancel' },
+};
+async function editorValues(page) {
+  return page.locator('input,textarea').evaluateAll(es => es.filter(e => ['text', 'number', 'textarea'].includes(e.type)).map(e => ({ id: e.id, type: e.type, value: e.value })));
+}
+
 function configuration(brand, role) {
   const base = process.env[`${brand}_BASE_URL`];
   const state = process.env[`${brand}_${role}_STORAGE_STATE`];
@@ -101,29 +110,42 @@ for (const brand of brands) {
       await evidence(info, 'student-personal-module', data);
     });
   });
-  test(`${brand}: own legacy service opens read-only and Cancel returns to list`, async ({ browser }, info) => {
+  test(`${brand}: current own editor read-navigation preserves values`, async ({ browser }, info) => {
     const config = configuration(brand, 'ADMIN');
+    const contract = ownEditorContracts[brand];
     const id = process.env[`${brand}_QA_SERVICE_ID`];
     const title = process.env[`${brand}_QA_SERVICE_TITLE`];
-    test.skip(!id || !title, `NOTRUN_FIXTURE: set ${brand}_QA_SERVICE_ID and ${brand}_QA_SERVICE_TITLE to an existing own QA-AT fixture`);
-    expect(Number.isSafeInteger(Number(id)) && Number(id) > 0, 'Own QA fixture ID required').toBe(true);
-    expect(title, 'Only an explicitly identified own QA fixture may be opened').toMatch(/^QA-(?:AT|Codex|CL)/);
+    test.skip(!id || !title, `NOTRUN_FIXTURE: set ${brand}_QA_SERVICE_ID and ${brand}_QA_SERVICE_TITLE to the documented own fixture`);
+    expect(config.userId, 'Editor fixture belongs only to the explicitly approved brand admin').toBe(contract.userId);
+    expect(Number(id), 'Only the pinned own editor fixture is permitted').toBe(contract.serviceId);
+    expect(title, 'Exact own service title must match the approved fixture').toBe(contract.title);
     await guarded(browser, config, async page => {
-      const data = await open(page, config, `/admin/services/${Number(id)}/edit`);
+      const pathname = `/admin/services/${contract.serviceId}/edit`;
+      const data = await open(page, config, pathname);
       identity(data, config);
-      expect(data.component, 'Legacy service editor must be rendered').toMatch(/ServicesView$/);
-      await expect(page.locator('#name')).toHaveValue(title);
-      const initial = await page.locator('input,textarea').evaluateAll(es => es.filter(e => ['text', 'number', 'textarea'].includes(e.type)).map(e => ({ type: e.type, value: e.value })));
-      const cancel = page.getByRole('button', { name: 'Отмена', exact: true });
-      await expect(cancel).toBeVisible();
-      await cancel.click();
+      expect(data.component, 'Current brand editor contract must match exactly; a stale wrapper expectation is not a product failure').toBe(contract.component);
+      await expect(page.locator('#name')).toHaveValue(contract.title);
+      const initial = await editorValues(page);
+      if (contract.navigation === 'services-link') {
+        // Captured from current Medvediva own16: no Cancel; visible Services breadcrumb.
+        const services = page.getByRole('link', { name: 'Услуги', exact: true });
+        await expect(services).toBeVisible();
+        const href = await services.getAttribute('href');
+        expect(new URL(href, config.origin).href, 'Only the actual same-origin Services list link may be followed').toBe(config.origin + '/admin/services');
+        await services.click();
+      } else {
+        const cancel = page.getByRole('button', { name: 'Отмена', exact: true });
+        await expect(cancel).toBeVisible();
+        await cancel.click();
+      }
       await expect(page).toHaveURL(config.origin + '/admin/services');
-      const again = await open(page, config, `/admin/services/${Number(id)}/edit`);
+      const again = await open(page, config, pathname);
       identity(again, config);
-      await expect(page.locator('#name')).toHaveValue(title);
-      const after = await page.locator('input,textarea').evaluateAll(es => es.filter(e => ['text', 'number', 'textarea'].includes(e.type)).map(e => ({ type: e.type, value: e.value })));
-      expect(after, 'Cancel and reopening must preserve server-rendered service values').toEqual(initial);
-      await evidence(info, 'legacy-read-cancel', { uid: again.uid, component: again.component, production: again.production, serviceId: Number(id), cancelled: true, preserved: true, build: again.build });
+      expect(again.component).toBe(contract.component);
+      await expect(page.locator('#name')).toHaveValue(contract.title);
+      const after = await editorValues(page);
+      expect(after, 'Read-only navigation and reopening must preserve server-rendered values').toEqual(initial);
+      await evidence(info, 'current-editor-read-navigation', { uid: again.uid, component: again.component, production: again.production, serviceId: contract.serviceId, navigation: contract.navigation, preserved: true, fieldsCompared: after.length, build: again.build });
     });
   });
 }
