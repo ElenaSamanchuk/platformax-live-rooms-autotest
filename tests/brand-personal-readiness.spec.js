@@ -149,3 +149,69 @@ for (const brand of brands) {
     });
   });
 }
+
+
+// 27 Oct task contract: request requires a reason; current confirmed time is not an alternative.
+// A coordinator provisions the own confirmed fixture first. This case never submits the request.
+test('KOCHFIT: own confirmed session change form requires a nonblank reason and excludes its current time', async ({ browser }, info) => {
+  const config = configuration('KOCHFIT', 'STUDENT');
+  const sessionId = Number(process.env.KOCHFIT_QA_CHANGE_SESSION_ID);
+  const startsAt = process.env.KOCHFIT_QA_CHANGE_STARTS_AT;
+  const serviceTitle = process.env.KOCHFIT_QA_CHANGE_SERVICE_TITLE;
+  test.skip(!sessionId || !startsAt || !serviceTitle, 'NOTRUN_FIXTURE: provide the coordinator-confirmed own session ID, starts_at and exact QA service title');
+  expect(Number.isSafeInteger(sessionId) && sessionId > 0, 'Own fixture ID must be a positive integer').toBe(true);
+  expect(Number.isFinite(Date.parse(startsAt)), 'Exact server ISO starts_at is required').toBe(true);
+  expect(serviceTitle, 'Only an explicitly named own QA service is permitted').toMatch(/^QA-/);
+  await guarded(browser, config, async page => {
+    const data = await open(page, config, '/service-sessions');
+    identity(data, config);
+    expect(data.owner === true || data.admin === true || ['owner', 'admin', 'administrator'].includes(data.role), 'Independent student required').toBe(false);
+    expect(data.student === true || data.role === 'student', 'Explicit student role required').toBe(true);
+    expect(data.component, 'Real student session page required').toMatch(/StudentSessions/);
+    const rows = await page.locator('#app').evaluate(el => JSON.parse(el.dataset.page).props.upcoming.map(s => ({ id: s.id, service: s.service, status: s.status, starts_at: s.starts_at, can_request_change: s.can_request_change, change_requested_starts_at: s.change_requested_starts_at })));
+    const index = rows.findIndex(s => Number(s.id) === sessionId);
+    expect(index, 'The provisioned own session must occur in the current student upcoming list').toBeGreaterThanOrEqual(0);
+    const before = rows[index];
+    expect(before.service).toBe(serviceTitle);
+    expect(before.status).toBe('confirmed');
+    expect(Date.parse(before.starts_at)).toBe(Date.parse(startsAt));
+    expect(before.can_request_change).toBe(true);
+    expect(before.change_requested_starts_at, 'Fixture must have no outstanding request').toBeFalsy();
+    await page.locator('[data-role="tab-sessions"]').click();
+    const row = page.locator('[data-role="upcoming-row"]').nth(index);
+    await expect(row).toContainText(serviceTitle);
+    const slotsResponse = page.waitForResponse(r => {
+      const url = new URL(r.url());
+      return r.request().method() === 'GET' && url.origin === config.origin && url.searchParams.get('session_id') === String(sessionId) && /slots/.test(url.pathname);
+    });
+    await row.locator('[data-role="change-start"]').click();
+    const response = await slotsResponse;
+    expect(response.status(), 'Alternative slots must load successfully').toBe(200);
+    const slots = (await response.json()).slots;
+    expect(Array.isArray(slots), 'Expected actual server slots array').toBe(true);
+    expect(slots.length, 'Provision at least one alternative before this test').toBeGreaterThan(0);
+    expect(slots.every(s => Number.isFinite(Date.parse(s.starts_at))), 'Each alternative needs a valid server time').toBe(true);
+    expect(slots.some(s => Date.parse(s.starts_at) === Date.parse(startsAt)), 'The currently confirmed time must not be offered for a change request').toBe(false);
+    await expect(row.locator('[data-role="change-slot"]')).toHaveCount(slots.length);
+    await row.locator('[data-role="change-slot"]').first().click();
+    const reason = row.locator('[data-role="change-reason"]');
+    const send = row.locator('[data-role="change-send"]');
+    await expect(reason).toBeVisible();
+    await expect(reason).toHaveAttribute('required', '');
+    await expect(reason).toHaveAttribute('maxlength', '500');
+    await expect(send, 'Empty reason must disable submission').toBeDisabled();
+    await reason.fill('   ');
+    await expect(send, 'Whitespace is not a reason').toBeDisabled();
+    await reason.fill('QA-AT read-only reason form check');
+    await expect(send, 'A selected alternative plus a meaningful reason enables submission').toBeEnabled();
+    await row.locator('[data-role="change-close"]').click();
+    const afterData = await open(page, config, '/service-sessions');
+    identity(afterData, config);
+    const after = await page.locator('#app').evaluate((el, id) => {
+      const s = JSON.parse(el.dataset.page).props.upcoming.find(s => Number(s.id) === id);
+      return s && { starts_at: s.starts_at, status: s.status, change_requested_starts_at: s.change_requested_starts_at };
+    }, sessionId);
+    expect(after, 'Closing the form must not change the session or create a request').toEqual({ starts_at: before.starts_at, status: before.status, change_requested_starts_at: before.change_requested_starts_at });
+    await evidence(info, 'change-reason-form-read-only', { uid: data.uid, sessionId, emptyDisabled: true, whitespaceDisabled: true, meaningfulEnabled: true, currentTimeExcluded: true, alternatives: slots.length, submitted: false, unchangedAfterReload: true, build: data.build });
+  });
+});

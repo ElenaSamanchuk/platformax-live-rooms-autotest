@@ -66,3 +66,21 @@ Actual runs remain separate:
 - **Unpublished diagnostic browser-Back-only attempt:0 PASS,1 FAIL before the contract ran.** Fresh `/profile` navigation timed out after30seconds before editor/history assertions. Therefore Back functionality is **NOTRUN_PREFLIGHT**, not PASS and not evidence of another product defect. It is not combined with the original6-case run to claim4 passes. No further product runs were made. That unexecuted Back case was removed from this published test file and kept only as a local diagnostic draft.
 
 Both independent admin authentication captures remain distinct from business-test results. Student states are absent and never replaced with admin states. All contexts close in `finally`, including navigation failure; no logout, fixtures or server changes are required. Trace/video/screenshots remain off in the suite. Local auth states, raw logs, screenshots and evidence stay outside Git. Syntax/discovery validation and functional outcomes must be reported separately.
+
+
+## Change-request reason form (27 Oct task)
+
+The Kochfit-only case extends this same read-only suite with an independently authenticated student and a coordinator-provisioned own confirmed session. Configure these additional private values:
+
+```dotenv
+KOCHFIT_QA_CHANGE_SESSION_ID=
+KOCHFIT_QA_CHANGE_STARTS_AT=
+KOCHFIT_QA_CHANGE_SERVICE_TITLE=
+```
+
+Use the exact current server ISO time and a QA-prefixed own service title. The test verifies the student session, loads alternatives through the real UI, requires the current confirmed time to be absent from the actual slots response, checks empty and whitespace reasons disable submission and a meaningful reason enables it, then closes the form and verifies the session remained unchanged after a new page GET. It never clicks submit; the existing request guard blocks all writes.
+
+This case does not prove server-side reason validation, persistence, trainer accept/reject, or booking/balance/payment behavior. Those need a separately coordinated business-flow test. A missing independent student state or usable own fixture is NOTRUN_AUTH/NOTRUN_FIXTURE, not a pass. Syntax/discovery alone do not confirm product behavior.
+
+
+Validation on 27 Oct: syntax and discovery pass (7 cases). The strict Kochfit-only run completed with 2 admin passes and 2 NOTRUN_AUTH skips (independent student deployment and the new form case); no failures. A separately authorized private robot impersonation diagnostic exercised the same form contract against a real own confirmed session: actual alternatives excluded the current time; empty/whitespace disabled submit and meaningful text enabled it; server rejected empty/whitespace reasons with 422 without changing the session; a real submitted request retained the old confirmed time and preserved its reason after reload. This diagnostic is explicitly not a pass of the strict independent-student case and does not relax its impersonation guard. No private auth states, raw logs or screenshots are published.
