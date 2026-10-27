@@ -1,0 +1,34 @@
+// Ретест гостевого жизненного цикла после исправлений 26.10 23:09.
+const {test,expect}=require('@playwright/test');
+const fs=require('fs');const path=require('path');const h=require('./helpers');
+test.use({trace:'off',video:'off'});
+const out=process.env.QA_OUT||'qa-out/nightly-1027';
+function record(x){fs.mkdirSync(out,{recursive:true});fs.appendFileSync(path.join(out,'facts.jsonl'),JSON.stringify({at:new Date().toISOString(),...x})+'\n');}
+async function setup(browser,mode='open'){
+ const ctx=await browser.newContext({storageState:process.env.OWNER_STORAGE_STATE,viewport:{width:1440,height:900},locale:'ru-RU'});const page=await ctx.newPage();let id;
+ try {
+  expect(new URL(h.BASE).hostname,'разрешён только тестовый стенд').toMatch(/\.test\./);
+  await page.goto(h.BASE+'/profile',{waitUntil:'domcontentloaded'});
+  const me=await page.evaluate(()=>{const p=JSON.parse(document.querySelector('#app').dataset.page).props;return {id:p.user?.id,test:p.isProduction===false,imp:!!p.impersonation}});expect(me.test&&!!me.id&&!me.imp,'подтверждена тестовая сессия без подмены пользователя').toBe(true);
+  await page.goto(h.BASE+'/admin/live-rooms',{waitUntil:'domcontentloaded'});
+  const isOwner=await page.evaluate(()=>JSON.parse(document.querySelector('#app').dataset.page).props.schoolRbac?.isOwner);expect(isOwner,'подтверждены права владельца школы').toBe(true);
+  id=await h.createRoom(page,'QA-AT nightly1027 '+mode+' '+Date.now(),{meeting_method:'platform',guest_mode:'anonymous',visibility:'unlisted',entry_mode:'free',join_mode:mode,hand_raise_enabled:'1'});record({event:'created',id,mode});
+  expect((await h.publish(page,id)).status).toBe(200);expect((await h.start(page,id)).status).toBe(200);await page.goto(`${h.BASE}/admin/live-rooms/${id}/edit`,{waitUntil:'domcontentloaded'});const invite=await page.evaluate(()=>JSON.parse(document.querySelector('#app').dataset.page).props.invitationUrl);expect(invite).toBeTruthy();
+  await h.enterMeeting(page,id,{admin:true});return{ctx,page,id,invite,guests:[]};
+ } catch(error) {
+  try {
+   if(id){expect((await h.finish(page,id)).status,'очистка при ошибке подготовки').toBe(200);await expect.poll(async()=>{const s=await h.state(page,id);return{status:s.status,count:s.participants?.length}},{timeout:25000}).toEqual({status:'finished',count:0});record({event:'setup-cleanup',id,status:'finished',participants:0});}
+  } finally {await ctx.close();}
+  throw error;
+ }
+}
+async function guest(browser,r,name){const ctx=await browser.newContext({locale:'ru-RU',viewport:{width:1440,height:900}});r.guests.push(ctx);const page=await ctx.newPage();await page.goto(r.invite,{waitUntil:'domcontentloaded'});await page.getByText('Войти как гость',{exact:true}).click();await page.locator('input[autocomplete=name]').fill(name);await page.getByRole('button',{name:'Войти как гость',exact:true}).click();await page.waitForURL(/\/guest\/room/);return page;}
+async function join(p){await p.getByRole('button',{name:'Войти в комнату',exact:true}).click();await expect(p.getByRole('button',{name:'Выйти из встречи',includeHidden:true})).toBeAttached({timeout:30000});}
+async function finishUI(r){await h.wake(r.page);await r.page.getByRole('button',{name:'Ещё',exact:true}).click();await r.page.getByText('Завершить встречу для всех',{exact:true}).click();await r.page.getByRole('button',{name:'Завершить',exact:true}).click();}
+async function clean(r){if(!r)return;try{expect((await h.finish(r.page,r.id)).status).toBe(200);await expect.poll(async()=>{const s=await h.state(r.page,r.id);return{status:s.status,count:s.participants?.length}},{timeout:25000}).toEqual({status:'finished',count:0});record({event:'final',id:r.id,status:'finished',participants:0});}finally{for(const g of r.guests)await g.close();await r.ctx.close();}}
+
+test('M-20: завершение сразу закрывает гостям вход и сохраняется после обновления',async({browser},info)=>{let r;try{r=await setup(browser);const gs=[];for(let n=1;n<=2;n++){const p=await guest(browser,r,'QA-AT завершение '+n);await join(p);gs.push(p);}await finishUI(r);for(let n=0;n<gs.length;n++){const p=gs[n];await expect(p.getByText('Встреча завершена.',{exact:true}).first()).toBeVisible();await expect(p.getByRole('button',{name:'Войти в комнату',exact:true})).toHaveCount(0);await p.screenshot({path:info.outputPath('finished-'+n+'.png')});await p.reload();await expect(p.getByText('Встреча завершена.',{exact:true}).first()).toBeVisible();await expect(p.getByRole('button',{name:'Войти в комнату',exact:true})).toHaveCount(0);record({event:'M20-pass',id:r.id,repeat:n+1,reload:true});}}finally{await clean(r);}});
+
+test('L-29: отклонённый запрос отключает вход, отказ сохраняется после обновления',async({browser},info)=>{let r;try{r=await setup(browser,'approval');await h.wake(r.page);await r.page.getByRole('button',{name:'Участники',exact:true}).click();for(let n=1;n<=2;n++){const name='QA-AT отказ '+n;const p=await guest(browser,r,name);await p.getByRole('button',{name:'Войти в комнату',exact:true}).click();const row=r.page.getByText(name,{exact:true}).locator('..');await row.getByRole('button',{name:'Отклонить',exact:true}).click();await expect(p.getByRole('button',{name:'Запрос отклонён',exact:true})).toBeDisabled();await p.reload();await expect(p.getByRole('button',{name:'Запрос отклонён',exact:true})).toBeDisabled();const resp=await h.api(p,'POST',`/live-rooms/${r.id}/guest/join`,{});expect(resp.status,'сервер также отклоняет повторный вход').toBe(403);await p.screenshot({path:info.outputPath('rejected-'+n+'.png')});record({event:'L29-pass',id:r.id,repeat:n,joinStatus:resp.status});}}finally{await clean(r);}});
+
+test('Поздний ответ входа не возвращает гостя в уже завершённую встречу',async({browser},info)=>{let r,release;try{r=await setup(browser);const p=await guest(browser,r,'QA-AT задержка входа');let captured;const seen=new Promise(resolve=>captured=resolve);let unblock;const gate=new Promise(resolve=>unblock=resolve);release=unblock;await p.route(`**/live-rooms/${r.id}/guest/join`,async route=>{const response=await route.fetch();captured(response.status());await gate;await route.fulfill({response});});await p.getByRole('button',{name:'Войти в комнату',exact:true}).click();expect(await seen).toBe(200);await finishUI(r);await expect(p.getByText('Встреча завершена.',{exact:true}).first()).toBeVisible({timeout:20000});unblock();await p.waitForTimeout(6000);await expect(p.getByRole('button',{name:'Выйти из встречи',includeHidden:true})).toHaveCount(0);await expect(p.getByRole('button',{name:'Войти в комнату',exact:true})).toHaveCount(0);await expect(p.getByText('Встреча завершена.',{exact:true}).first()).toBeVisible();await p.screenshot({path:info.outputPath('late-join-finished.png')});record({event:'late-join-pass',id:r.id,upstreamJoin:200,finishedBeforeResponse:true});}finally{if(release)release();await clean(r);}});
