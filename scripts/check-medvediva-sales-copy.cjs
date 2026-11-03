@@ -6,7 +6,7 @@ try {
   if (!input) throw new Error('Usage: node scripts/check-medvediva-sales-copy.cjs <visible-sales-copy.txt>');
   if (fs.statSync(input).size > 65536) throw new Error('Snapshot must be at most 64 KiB');
   const violation = advertisedCarryOver(fs.readFileSync(input, 'utf8'));
-  console.log(violation ? 'FAIL L-MDV-22: sales copy advertises use of the remainder in a subsequent flow' : 'PASS: this saved sales-copy snapshot does not advertise next-flow carry-over');
+  console.log(violation ? 'FAIL L-MDV-22: the exact sentence removed by the Medvediva decision of 2026-10-30 is present' : 'PASS: the exact removed sentence is absent from this saved Medvediva sales-copy snapshot');
   process.exitCode = violation ? 1 : 0;
 } catch (error) {
   console.error('NOTRUN: ' + error.message);

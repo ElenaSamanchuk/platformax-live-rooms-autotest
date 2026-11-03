@@ -66,3 +66,10 @@ QA_OUT=qa-out/nightly npx playwright test tests/nightly-1027.spec.js --output=te
 Нужны `BASE_URL` тестового стенда и `OWNER_STORAGE_STATE` действующей сессии владельца. Проверяются пустое имя, одни пробелы, повторная некорректная отправка с сообщением Введите имя, затем корректный вход в лобби. Два сценария: компьютер1440 и мобильная эмуляция390 с touch/DPR3. Каждому своя QA-комната; эфир не запускается, после прогона сервер подтверждает draft/unpublished/0. Trace и видео выключены
 
 27.10: 2/2 прошли на elena-13.test.nn99.ru. Заявленная разработчиком ревизия a1bcef4f3465; фактический гостевой чанк LiveRoomGuestDoorPage-BYG5NkNW.js. Это не проверка реальных Samsung/iPhone и не полный регресс Live
+
+
+## Точная фраза Medvediva, решение 30.10.2026
+
+Автономная проверка алгоритма без сети и учёток: `npm run test:medvediva-copy`. Офлайн-проверка собственного локального непустого текста: `node scripts/check-medvediva-sales-copy.cjs <visible-sales-copy.txt>`; приватный файл не добавлять в Git. Коды: 0 — точной фразы нет, 1 — найдена, 2 — вход не пригоден. Проверяется только точная удалённая фраза с нормализацией пробелов, NBSP, регистра и ё; разрешённое упоминание срока до конца следующего потока не запрещается.
+
+Живой набор `npx playwright test tests/medvediva-sales-copy.spec.js --output=test-results-medvediva-current` требует независимый `MEDVEDIVA_STUDENT_STORAGE_STATE`, `MEDVEDIVA_BASE_URL`, `MEDVEDIVA_STUDENT_USER_ID`, `MEDVEDIVA_QA_CHECKOUT_PATH`, `MEDVEDIVA_QA_PACKAGE_NAME` и `BRAND_QA_ALLOWED_ORIGINS`. Допускаются только точные утверждённые тестовые origin по SHA256 и явный `isProduction=false` от сервера. Не извлекать состояние из общей сессии Chrome и не подставлять owner/«Войти как». Без пригодных параметров — `SKIP_AUTH_OR_FIXTURE`, а не PASS. Запросы изменения запрещены, оплаты не нажимаются. Текущий фактический результат и ограничения — в [RESULTS.md](RESULTS.md).

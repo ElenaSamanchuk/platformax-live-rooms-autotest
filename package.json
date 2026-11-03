@@ -8,7 +8,8 @@
     "test:headed": "HEADED=1 playwright test tests/current-smoke.spec.js tests/access-email.spec.js",
     "report": "playwright show-report report",
     "test:known": "playwright test tests/known-issues.spec.js",
-    "test:all": "playwright test"
+    "test:all": "playwright test",
+    "test:medvediva-copy": "node --test scripts/medvediva-sales-copy.selftest.cjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"
